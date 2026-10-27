@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tank Levels – Brady Township Troutville Borough Water Association</title>
+<meta name="description" content="Current water storage tank levels for Brady Township Troutville Borough Water Association customers.">
+<style>
+  :root {
+    --bg: #f4f7fa; --card: #ffffff; --ink: #14202b; --muted: #5b6b7a; --line: #dde4ea;
+    --water: #2b7fd0; --water-top: #5aa5ea; --ok: #1f8a4c; --low: #b7791f; --crit: #c0392b;
+    --notice-bg: #fff6e0; --notice-line: #f0c36d;
+  }
+  :root { --steel-dark: #8796a5; --steel-mid: #c9d3dc; --steel-light: #eef2f6; --tank-inside: #e3e9ef; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --steel-dark: #3e4c59; --steel-mid: #6d7d8c; --steel-light: #a3b1be; --tank-inside: #0c1218;
+      --bg: #0f161d; --card: #17212b; --ink: #e6edf3; --muted: #93a3b3; --line: #2a3744;
+      --water: #3a8fe0; --water-top: #6bb3f5; --ok: #3cbf74; --low: #e0a34a; --crit: #ef6b5e;
+      --notice-bg: #3a2f14; --notice-line: #7a6326;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  header h1 { font-size: clamp(1.3rem, 3.5vw, 1.8rem); margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+    margin: 20px 0; color: var(--muted); font-size: .95rem; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .85rem;
+    font-weight: 600; border: 1px solid currentColor; }
+  .banner { padding: 12px 16px; border-radius: 10px; margin: 16px 0;
+    background: var(--notice-bg); border: 1px solid var(--notice-line); }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
+    display: grid; grid-template-columns: 150px 1fr; gap: 18px; align-items: center; }
+  .card h2 { font-size: 1.05rem; margin: 0 0 6px; grid-column: 1 / -1; }
+  .tank { width: 150px; height: auto; display: block; overflow: visible; }
+  .tank .scale { font-size: 9px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .tank .mark { font-size: 10px; font-weight: 700; fill: #fff; }
+  .wave { animation: wave 3s linear infinite; }
+  .wave.back { animation-duration: 5s; animation-direction: reverse; opacity: .5; }
+  @keyframes wave { to { transform: translateX(-40px); } }
+  @media (prefers-reduced-motion: reduce) { .wave { animation: none; } }
+  @media (max-width: 380px) {
+    .card { grid-template-columns: 120px 1fr; gap: 12px; }
+    .tank { width: 120px; }
+  }
+  .pct { font-size: 2.2rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .detail { color: var(--muted); font-size: .92rem; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .status { margin-top: 10px; }
+  .ok { color: var(--ok); } .low { color: var(--low); } .crit { color: var(--crit); }
+  .pending { color: var(--muted); }
+  .card.installing .tank { opacity: .55; }
+  .card.installing .pct { color: var(--muted); }
+  footer { margin-top: 32px; color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line); padding-top: 16px; }
+  footer h3 { font-size: .95rem; color: var(--ink); margin: 0 0 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 8px 0 0; padding: 0; list-style: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Water Storage Tank Levels</h1>
+    <p>Brady Township Troutville Borough Water Association</p>
+  </header>
+
+  <div id="banners"></div>
+
+  <div class="meta">
+    <span>Last reading: <strong id="updated">—</strong></span>
+  </div>
+
+  <main class="grid" id="tanks" aria-live="polite"></main>
+
+  <footer>
+    <h3>What the levels mean</h3>
+    <ul class="legend">
+      <li><span class="pill ok">Normal</span> 60% or more — tank is well supplied</li>
+      <li><span class="pill low">Low</span> Below 60% — please conserve</li>
+      <li><span class="pill crit">Critical</span> Below 30% — please limit water use</li>
+    </ul>
+    <p>Readings come from tank sensors and are updated automatically. This page refreshes every few minutes.
+      For outages or emergencies, contact the Water Association office directly.</p>
+  </footer>
+</div>
+
+<script src="tank-data.js"></script>
+<script>
+  const STALE_HOURS = 6;
+  const REFRESH_MS = 5 * 60 * 1000;
+
+  function statusFor(t, pct) {
+    const crit = t.critical_pct ?? 30, low = t.low_pct ?? 60;
+    if (pct < crit) return { label: "Critical", cls: "crit" };
+    if (pct < low) return { label: "Low", cls: "low" };
+    return { label: "Normal", cls: "ok" };
+  }
+
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  // Draws a cut-away steel storage tank (domed roof, riveted seams, ladder)
+  // with animated water filled to `pct` percent. Pass pct = null to draw an
+  // empty tank (no reading yet); capacityFt = null leaves off the feet scale.
+  function tankSvg(id, pct, levelFt, capacityFt) {
+    const top = 34, bottom = 196, left = 22, right = 128;          // tank body
+    const inL = left + 5, inR = right - 5, inTop = top + 3, inBot = bottom - 3;
+    const surface = inBot - (inBot - inTop) * pct / 100;
+    const cx = (left + right) / 2;
+
+    let wave = `M${inL - 40} 0`;
+    let end = inL - 40;
+    for (; end < inR + 40; end += 40) wave += " q10 -3 20 0 t20 0";   // one 40px wavelength
+    wave += ` L${end} 300 L${inL - 40} 300 Z`;
+
+    // Height scale: 0, 1/4, 1/2, 3/4, full (in feet)
+    let scale = "";
+    for (let i = 0; capacityFt && i <= 4; i++) {
+      const y = inBot - (inBot - inTop) * i / 4;
+      scale += `<line x1="${left - 6}" x2="${left}" y1="${y}" y2="${y}" stroke="var(--muted)" />` +
+        `<text class="scale" x="${left - 8}" y="${y + 3}" text-anchor="end">${Math.round(capacityFt * i / 4)}</text>`;
+    }
+
+    let rungs = "";
+    for (let y = top + 6; y < bottom - 4; y += 9) rungs += `<line x1="${right + 4}" x2="${right + 12}" y1="${y}" y2="${y}" />`;
+
+    let seams = "";
+    for (let i = 1; i < 4; i++) {
+      const y = top + (bottom - top) * i / 4;
+      seams += `<path d="M${left} ${y} Q${cx} ${y + 5} ${right} ${y}" />`;
+    }
+
+    const labelY = Math.min(Math.max(surface + 14, inTop + 14), inBot - 6);
+
+    return `
+<svg class="tank" viewBox="0 0 150 210" role="img" aria-hidden="true">
+  <defs>
+    <linearGradient id="steel${id}" x1="0" x2="1">
+      <stop offset="0" style="stop-color:var(--steel-dark)"/>
+      <stop offset=".35" style="stop-color:var(--steel-light)"/>
+      <stop offset=".7" style="stop-color:var(--steel-mid)"/>
+      <stop offset="1" style="stop-color:var(--steel-dark)"/>
+    </linearGradient>
+    <linearGradient id="water${id}" x1="0" x2="1">
+      <stop offset="0" stop-color="#1b5fa3"/>
+      <stop offset=".4" stop-color="#3d93e0"/>
+      <stop offset="1" stop-color="#1b5fa3"/>
+    </linearGradient>
+    <clipPath id="inside${id}">
+      <path d="M${inL} ${inTop} H${inR} V${inBot} Q${cx} ${inBot + 6} ${inL} ${inBot} Z"/>
+    </clipPath>
+  </defs>
+
+  ${scale}
+
+  <!-- ground shadow -->
+  <ellipse cx="${cx}" cy="${bottom + 4}" rx="${(right - left) / 2 + 8}" ry="6" fill="#000" opacity=".15"/>
+
+  <!-- shell -->
+  <path d="M${left} ${top} H${right} V${bottom} Q${cx} ${bottom + 8} ${left} ${bottom} Z" fill="url(#steel${id})"/>
+
+  <!-- cut-away interior with water -->
+  <g clip-path="url(#inside${id})">
+    <rect x="${inL}" y="${inTop}" width="${inR - inL}" height="${inBot - inTop + 6}" style="fill:var(--tank-inside)"/>
+    ${pct == null ? "" : `<g transform="translate(0 ${surface})">
+      <path class="wave back" d="${wave}" fill="#6bb3f5" transform="translate(0 -2)"/>
+      <path class="wave" d="${wave}" fill="url(#water${id})"/>
+    </g>`}
+  </g>
+
+  <!-- seams and outline -->
+  <g fill="none" stroke="var(--steel-dark)" stroke-width="1" opacity=".55">${seams}</g>
+  <path d="M${left} ${top} H${right} V${bottom} Q${cx} ${bottom + 8} ${left} ${bottom} Z" fill="none" stroke="var(--steel-dark)" stroke-width="1.5"/>
+
+  <!-- domed roof, vent and railing -->
+  <path d="M${left - 3} ${top} Q${cx} ${top - 30} ${right + 3} ${top} Z" fill="url(#steel${id})" stroke="var(--steel-dark)" stroke-width="1.5"/>
+  <rect x="${cx - 4}" y="${top - 22}" width="8" height="7" rx="1.5" fill="var(--steel-dark)"/>
+  <path d="M${cx - 6} ${top - 22} H${cx + 6}" stroke="var(--steel-dark)" stroke-width="2"/>
+
+  <!-- ladder -->
+  <g stroke="var(--steel-dark)" stroke-width="1.3">
+    <line x1="${right + 4}" x2="${right + 4}" y1="${top - 2}" y2="${bottom}"/>
+    <line x1="${right + 12}" x2="${right + 12}" y1="${top - 6}" y2="${bottom}"/>
+    ${rungs}
+  </g>
+
+  <!-- current level label -->
+  ${pct == null ? "" : `<text class="mark" x="${cx}" y="${labelY}" text-anchor="middle" style="paint-order:stroke;stroke:#0d3d6b;stroke-width:3px">${levelFt.toFixed(1)} ft</text>`}
+</svg>`;
+  }
+
+  function render(data) {
+    const banners = document.getElementById("banners");
+    banners.replaceChildren();
+    if (data.notice) banners.append(el("div", "banner", data.notice));
+    if (data.sample) banners.append(el("div", "banner", "Preview — some values on this page are placeholders and it does not yet update automatically."));
+
+    // Newest reading across all tanks; falls back to when the data file was written.
+    const times = data.tanks.filter(t => t.reading_time).map(t => new Date(t.reading_time));
+    const updated = times.length ? new Date(Math.max(...times)) : new Date(data.updated);
+    document.getElementById("updated").textContent = updated.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
+    const grid = document.getElementById("tanks");
+    grid.replaceChildren();
+    for (const [i, t] of data.tanks.entries()) {
+      const noReading = t.level_ft == null || !t.capacity_ft;
+      if (t.installing || noReading) {
+        const card = el("section", "card installing");
+        const label = t.installing ? "Installing sensor" : "Reading unavailable";
+        card.setAttribute("aria-label", `${t.name}: ${label}`);
+        card.append(el("h2", null, t.name));
+        const tank = el("div");
+        tank.innerHTML = tankSvg(i, null, null, t.capacity_ft);
+        const info = el("div");
+        info.append(el("div", "pct", "—"));
+        info.append(el("div", "detail", t.installing ? "Level readings coming soon" : "Please check back later"));
+        const st = el("div", "status");
+        st.append(el("span", "pill pending", label));
+        info.append(st);
+        card.append(tank, info);
+        grid.append(card);
+        continue;
+      }
+
+      const pct = Math.max(0, Math.min(100, (t.level_ft / t.capacity_ft) * 100));
+      const s = statusFor(t, pct);
+
+      const card = el("section", "card");
+      card.setAttribute("aria-label", `${t.name}: ${pct.toFixed(0)} percent full, ${s.label}`);
+      card.append(el("h2", null, t.name));
+
+      const tank = el("div");
+      tank.innerHTML = tankSvg(i, pct, t.level_ft, t.capacity_ft);
+
+      const info = el("div");
+      info.append(el("div", "pct", pct.toFixed(0) + "%"));
+      info.append(el("div", "detail", `${t.level_ft.toFixed(1)} ft of ${t.capacity_ft} ft`));
+      const readAt = new Date(t.reading_time || data.updated);
+      info.append(el("div", "detail", "Read " + readAt.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })));
+      const st = el("div", "status");
+      st.append(el("span", "pill " + s.cls, s.label));
+      if ((Date.now() - readAt) / 36e5 > STALE_HOURS) st.append(" ", el("span", "pill low", "May be out of date"));
+      info.append(st);
+
+      card.append(tank, info);
+      grid.append(card);
+    }
+  }
+
+  function reloadData() {
+    const s = document.createElement("script");
+    s.src = "tank-data.js?t=" + Date.now();
+    s.onload = () => { render(window.TANK_DATA); s.remove(); };
+    document.body.append(s);
+  }
+
+  render(window.TANK_DATA);
+  setInterval(reloadData, REFRESH_MS);
+</script>
+</body>
+</html>
