@@ -29,14 +29,14 @@
   .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
     margin: 20px 0; color: var(--muted); font-size: .95rem; }
   .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .85rem;
-    font-weight: 600; border: 1px solid currentColor; }
+    font-weight: 600; border: 1px solid currentColor; white-space: nowrap; margin-top: 4px; }
   .banner { padding: 12px 16px; border-radius: 10px; margin: 16px 0;
     background: var(--notice-bg); border: 1px solid var(--notice-line); }
   .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
-    display: grid; grid-template-columns: 150px 1fr; gap: 18px; align-items: center; }
+    display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
   .card h2 { font-size: 1.05rem; margin: 0 0 6px; grid-column: 1 / -1; }
-  .tank { width: 150px; height: auto; display: block; overflow: visible; }
+  .tank { width: var(--w, 150px); height: auto; display: block; overflow: visible; }
   .tank .scale { font-size: 9px; fill: var(--muted); font-variant-numeric: tabular-nums; }
   .tank .mark { font-size: 10px; font-weight: 700; fill: #fff; }
   .wave { animation: wave 3s linear infinite; }
@@ -44,8 +44,8 @@
   @keyframes wave { to { transform: translateX(-40px); } }
   @media (prefers-reduced-motion: reduce) { .wave { animation: none; } }
   @media (max-width: 380px) {
-    .card { grid-template-columns: 120px 1fr; gap: 12px; }
-    .tank { width: 120px; }
+    .card { gap: 12px; }
+    .tank { width: calc(var(--w, 150px) * .8); }
   }
   .pct { font-size: 2.2rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
   .detail { color: var(--muted); font-size: .92rem; margin-top: 6px; font-variant-numeric: tabular-nums; }
@@ -105,41 +105,86 @@
     return e;
   }
 
-  // Draws a cut-away steel storage tank (domed roof, riveted seams, ladder)
-  // with animated water filled to `pct` percent. Pass pct = null to draw an
-  // empty tank (no reading yet); capacityFt = null leaves off the feet scale.
-  function tankSvg(id, pct, levelFt, capacityFt) {
-    const top = 34, bottom = 196, left = 22, right = 128;          // tank body
-    const inL = left + 5, inR = right - 5, inTop = top + 3, inBot = bottom - 3;
-    const surface = inBot - (inBot - inTop) * pct / 100;
-    const cx = (left + right) / 2;
+  // Draws `count` cut-away steel storage tanks side by side (domed roof,
+  // riveted seams, ladder), all filled to `pct` percent with animated water.
+  // Pass pct = null to draw empty tanks (no reading yet); capacityFt = null
+  // leaves off the feet scale.
+  function tankSvg(id, pct, levelFt, capacityFt, count = 1) {
+    const W = count > 1 ? 62 : 106, GAP = 8;                        // width of each tank body
+    const top = 34, bottom = 196, first = 22;
+    const last = first + (count - 1) * (W + GAP);                    // left edge of the last tank
+    const width = last + W + 22;
 
-    let wave = `M${inL - 40} 0`;
-    let end = inL - 40;
-    for (; end < inR + 40; end += 40) wave += " q10 -3 20 0 t20 0";   // one 40px wavelength
-    wave += ` L${end} 300 L${inL - 40} 300 Z`;
+    function oneTank(left) {
+      const right = left + W, cx = (left + right) / 2;
+      const inL = left + 5, inR = right - 5, inTop = top + 3, inBot = bottom - 3;
+      const surface = inBot - (inBot - inTop) * pct / 100;
+
+      let wave = `M${inL - 40} 0`;
+      let end = inL - 40;
+      for (; end < inR + 40; end += 40) wave += " q10 -3 20 0 t20 0";   // one 40px wavelength
+      wave += ` L${end} 300 L${inL - 40} 300 Z`;
+
+      let seams = "";
+      for (let i = 1; i < 4; i++) {
+        const y = top + (bottom - top) * i / 4;
+        seams += `<path d="M${left} ${y} Q${cx} ${y + 5} ${right} ${y}" />`;
+      }
+
+      const labelY = Math.min(Math.max(surface + 14, inTop + 14), inBot - 6);
+      const clip = `inside${id}-${left}`;
+
+      return `
+  <clipPath id="${clip}">
+    <path d="M${inL} ${inTop} H${inR} V${inBot} Q${cx} ${inBot + 6} ${inL} ${inBot} Z"/>
+  </clipPath>
+
+  <!-- ground shadow -->
+  <ellipse cx="${cx}" cy="${bottom + 4}" rx="${W / 2 + 8}" ry="6" fill="#000" opacity=".15"/>
+
+  <!-- shell -->
+  <path d="M${left} ${top} H${right} V${bottom} Q${cx} ${bottom + 8} ${left} ${bottom} Z" fill="url(#steel${id})"/>
+
+  <!-- cut-away interior with water -->
+  <g clip-path="url(#${clip})">
+    <rect x="${inL}" y="${inTop}" width="${inR - inL}" height="${inBot - inTop + 6}" style="fill:var(--tank-inside)"/>
+    ${pct == null ? "" : `<g transform="translate(0 ${surface})">
+      <path class="wave back" d="${wave}" fill="#6bb3f5" transform="translate(0 -2)"/>
+      <path class="wave" d="${wave}" fill="url(#water${id})"/>
+    </g>`}
+  </g>
+
+  <!-- seams and outline -->
+  <g fill="none" stroke="var(--steel-dark)" stroke-width="1" opacity=".55">${seams}</g>
+  <path d="M${left} ${top} H${right} V${bottom} Q${cx} ${bottom + 8} ${left} ${bottom} Z" fill="none" stroke="var(--steel-dark)" stroke-width="1.5"/>
+
+  <!-- domed roof and vent -->
+  <path d="M${left - 3} ${top} Q${cx} ${top - 30} ${right + 3} ${top} Z" fill="url(#steel${id})" stroke="var(--steel-dark)" stroke-width="1.5"/>
+  <rect x="${cx - 4}" y="${top - 22}" width="8" height="7" rx="1.5" fill="var(--steel-dark)"/>
+  <path d="M${cx - 6} ${top - 22} H${cx + 6}" stroke="var(--steel-dark)" stroke-width="2"/>
+
+  <!-- current level label -->
+  ${pct == null ? "" : `<text class="mark" x="${cx}" y="${labelY}" text-anchor="middle" style="paint-order:stroke;stroke:#0d3d6b;stroke-width:3px">${levelFt.toFixed(1)} ft</text>`}`;
+    }
 
     // Height scale: 0, 1/4, 1/2, 3/4, full (in feet)
     let scale = "";
     for (let i = 0; capacityFt && i <= 4; i++) {
-      const y = inBot - (inBot - inTop) * i / 4;
-      scale += `<line x1="${left - 6}" x2="${left}" y1="${y}" y2="${y}" stroke="var(--muted)" />` +
-        `<text class="scale" x="${left - 8}" y="${y + 3}" text-anchor="end">${Math.round(capacityFt * i / 4)}</text>`;
+      const y = bottom - 3 - (bottom - top - 6) * i / 4;
+      scale += `<line x1="${first - 6}" x2="${first}" y1="${y}" y2="${y}" stroke="var(--muted)" />` +
+        `<text class="scale" x="${first - 8}" y="${y + 3}" text-anchor="end">${Math.round(capacityFt * i / 4)}</text>`;
     }
 
+    // Ladder on the right-hand side of the last tank
+    const lx = last + W;
     let rungs = "";
-    for (let y = top + 6; y < bottom - 4; y += 9) rungs += `<line x1="${right + 4}" x2="${right + 12}" y1="${y}" y2="${y}" />`;
+    for (let y = top + 6; y < bottom - 4; y += 9) rungs += `<line x1="${lx + 4}" x2="${lx + 12}" y1="${y}" y2="${y}" />`;
 
-    let seams = "";
-    for (let i = 1; i < 4; i++) {
-      const y = top + (bottom - top) * i / 4;
-      seams += `<path d="M${left} ${y} Q${cx} ${y + 5} ${right} ${y}" />`;
-    }
-
-    const labelY = Math.min(Math.max(surface + 14, inTop + 14), inBot - 6);
+    let tanks = "";
+    for (let k = 0; k < count; k++) tanks += oneTank(first + k * (W + GAP));
 
     return `
-<svg class="tank" viewBox="0 0 150 210" role="img" aria-hidden="true">
+<svg class="tank" viewBox="0 0 ${width} 210" style="--w:${width}px" role="img" aria-hidden="true">
   <defs>
     <linearGradient id="steel${id}" x1="0" x2="1">
       <stop offset="0" style="stop-color:var(--steel-dark)"/>
@@ -152,46 +197,17 @@
       <stop offset=".4" stop-color="#3d93e0"/>
       <stop offset="1" stop-color="#1b5fa3"/>
     </linearGradient>
-    <clipPath id="inside${id}">
-      <path d="M${inL} ${inTop} H${inR} V${inBot} Q${cx} ${inBot + 6} ${inL} ${inBot} Z"/>
-    </clipPath>
   </defs>
 
   ${scale}
-
-  <!-- ground shadow -->
-  <ellipse cx="${cx}" cy="${bottom + 4}" rx="${(right - left) / 2 + 8}" ry="6" fill="#000" opacity=".15"/>
-
-  <!-- shell -->
-  <path d="M${left} ${top} H${right} V${bottom} Q${cx} ${bottom + 8} ${left} ${bottom} Z" fill="url(#steel${id})"/>
-
-  <!-- cut-away interior with water -->
-  <g clip-path="url(#inside${id})">
-    <rect x="${inL}" y="${inTop}" width="${inR - inL}" height="${inBot - inTop + 6}" style="fill:var(--tank-inside)"/>
-    ${pct == null ? "" : `<g transform="translate(0 ${surface})">
-      <path class="wave back" d="${wave}" fill="#6bb3f5" transform="translate(0 -2)"/>
-      <path class="wave" d="${wave}" fill="url(#water${id})"/>
-    </g>`}
-  </g>
-
-  <!-- seams and outline -->
-  <g fill="none" stroke="var(--steel-dark)" stroke-width="1" opacity=".55">${seams}</g>
-  <path d="M${left} ${top} H${right} V${bottom} Q${cx} ${bottom + 8} ${left} ${bottom} Z" fill="none" stroke="var(--steel-dark)" stroke-width="1.5"/>
-
-  <!-- domed roof, vent and railing -->
-  <path d="M${left - 3} ${top} Q${cx} ${top - 30} ${right + 3} ${top} Z" fill="url(#steel${id})" stroke="var(--steel-dark)" stroke-width="1.5"/>
-  <rect x="${cx - 4}" y="${top - 22}" width="8" height="7" rx="1.5" fill="var(--steel-dark)"/>
-  <path d="M${cx - 6} ${top - 22} H${cx + 6}" stroke="var(--steel-dark)" stroke-width="2"/>
+  ${tanks}
 
   <!-- ladder -->
   <g stroke="var(--steel-dark)" stroke-width="1.3">
-    <line x1="${right + 4}" x2="${right + 4}" y1="${top - 2}" y2="${bottom}"/>
-    <line x1="${right + 12}" x2="${right + 12}" y1="${top - 6}" y2="${bottom}"/>
+    <line x1="${lx + 4}" x2="${lx + 4}" y1="${top - 2}" y2="${bottom}"/>
+    <line x1="${lx + 12}" x2="${lx + 12}" y1="${top - 6}" y2="${bottom}"/>
     ${rungs}
   </g>
-
-  <!-- current level label -->
-  ${pct == null ? "" : `<text class="mark" x="${cx}" y="${labelY}" text-anchor="middle" style="paint-order:stroke;stroke:#0d3d6b;stroke-width:3px">${levelFt.toFixed(1)} ft</text>`}
 </svg>`;
   }
 
@@ -216,7 +232,7 @@
         card.setAttribute("aria-label", `${t.name}: ${label}`);
         card.append(el("h2", null, t.name));
         const tank = el("div");
-        tank.innerHTML = tankSvg(i, null, null, t.capacity_ft);
+        tank.innerHTML = tankSvg(i, null, null, t.capacity_ft, t.count);
         const info = el("div");
         info.append(el("div", "pct", "—"));
         info.append(el("div", "detail", t.installing ? "Level readings coming soon" : "Please check back later"));
@@ -236,7 +252,7 @@
       card.append(el("h2", null, t.name));
 
       const tank = el("div");
-      tank.innerHTML = tankSvg(i, pct, t.level_ft, t.capacity_ft);
+      tank.innerHTML = tankSvg(i, pct, t.level_ft, t.capacity_ft, t.count);
 
       const info = el("div");
       info.append(el("div", "pct", pct.toFixed(0) + "%"));
