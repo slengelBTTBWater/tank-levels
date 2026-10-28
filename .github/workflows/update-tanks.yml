@@ -51,7 +51,7 @@ jobs:
           git push
 
       - name: Collect public files
-          run: mkdir _site && cp index.html tank-data.js logo.png _site/
+        run: mkdir _site && cp index.html tank-data.js logo.png _site/
 
       - uses: actions/upload-pages-artifact@v3
         with:
