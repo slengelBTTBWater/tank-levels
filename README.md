@@ -8,6 +8,7 @@ GitHub pulls the latest readings from Zonelog and republishes the page.
 | File | What it is |
 |---|---|
 | `index.html` | The public page |
+| `logo.png` | Association logo shown at the top of the page |
 | `tank-data.js` | Latest readings. Written automatically — don't edit by hand |
 | `tanks.json` | Tank names, Zonelog logger serials, full heights. **Edit this one** |
 | `scripts/update-tanks.mjs` | Fetches readings from the Zonelog API |
@@ -28,7 +29,7 @@ username such as `bttbwater` (it appears in the backup address
    (free GitHub Pages needs a public repository — no secrets are in the files),
    and click **Create repository**.
 2. Click **uploading an existing file**, then drag in `index.html`,
-   `tank-data.js`, `tanks.json`, `README.md`, and the `scripts` and `.github`
+   `logo.png`, `tank-data.js`, `tanks.json`, `README.md`, and the `scripts` and `.github`
    folders. Click **Commit changes**.
    - Check that `.github/workflows/update-tanks.yml` shows up in the repository.
      If Windows hid the `.github` folder, use **Add file → Create new file**,
