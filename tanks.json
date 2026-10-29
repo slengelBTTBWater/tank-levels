@@ -3,6 +3,6 @@
   "tanks": [
     { "name": "Luthersburg Tanks", "serial": "1956", "capacity_ft": 22, "count": 2 },
     { "name": "Chestnut Grove Tank", "serial": "1957", "capacity_ft": 42 },
-    { "name": "Troutville Tank", "serial": "1960", "capacity_ft": null, "installing": true }
+    { "name": "Troutville Tank", "serial": "1960", "capacity_ft": 22 }
   ]
 }
