@@ -290,6 +290,11 @@
 
   render(window.TANK_DATA);
   setInterval(reloadData, REFRESH_MS);
+  // Browsers slow down timers in hidden tabs and on a sleeping computer, so
+  // also check right away when someone comes back to the page.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reloadData();
+  });
 </script>
 </body>
 </html>
