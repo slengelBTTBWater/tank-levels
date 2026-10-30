@@ -25,7 +25,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      # Start from the newest commit, not the one that triggered the run, so a
+      # run that waited behind another one doesn't start out of date.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-node@v4
         with:
@@ -48,6 +52,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Update tank levels" -- tank-data.js
+          # If another run saved readings meanwhile, keep this run's newer ones.
+          git pull --rebase -X theirs
           git push
 
       - name: Collect public files
