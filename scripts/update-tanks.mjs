@@ -10,7 +10,9 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const TOKEN_URL = "https://zonelogidentity.net/connect/token";
 const API = "https://api.zonelog.net/api/waternet";
-const LOOKBACK_HOURS = 48;
+// Zonelog appears to cut off long requests before the newest readings, so ask
+// for a short recent window first and only look further back if it's empty.
+const LOOKBACK_HOURS = [6, 48];
 const CONFIG = new URL("../tanks.json", import.meta.url);
 const OUT = new URL("../tank-data.js", import.meta.url);
 const PREFIX = "window.TANK_DATA = ";
@@ -52,22 +54,29 @@ function toFeet(value, units) {
   return value;
 }
 
-async function latestReading(token, serial) {
+async function readings(token, serial, hours) {
   const now = new Date();
   const params = new URLSearchParams({
     companyGuid: env("ZONELOG_COMPANY_GUID"),
     serial,
-    startDate: apiDate(new Date(now - LOOKBACK_HOURS * 36e5)),
+    startDate: apiDate(new Date(now - hours * 36e5)),
     endDate: apiDate(now),
   });
   const res = await fetch(`${API}/pressure?${params}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Pressure request for logger ${serial} failed: ${res.status} ${await res.text()}`);
+  return (await res.json()).filter(r => r.data != null && String(r.serial) === serial);
+}
 
-  const rows = (await res.json()).filter(r => r.data != null && String(r.serial) === serial);
-  if (!rows.length) throw new Error(`No pressure readings for logger ${serial} in the last ${LOOKBACK_HOURS} hours`);
+async function latestReading(token, serial) {
+  let rows = [], hours;
+  for (hours of LOOKBACK_HOURS) {
+    rows = await readings(token, serial, hours);
+    if (rows.length) break;
+  }
+  if (!rows.length) throw new Error(`No pressure readings for logger ${serial} in the last ${hours} hours`);
 
   const latest = rows.reduce((a, b) => (parseUtc(b.readingDateUTC) > parseUtc(a.readingDateUTC) ? b : a));
-  console.log(`Logger ${serial}: ${rows.length} readings; latest ${latest.data} ${latest.units} ` +
+  console.log(`Logger ${serial}: ${rows.length} readings in last ${hours}h; latest ${latest.data} ${latest.units} ` +
     `(channel ${latest.channelLetter}) at ${latest.readingDateUTC}`);
   return {
     level_ft: Math.round(toFeet(latest.data, latest.units) * 10) / 10,
