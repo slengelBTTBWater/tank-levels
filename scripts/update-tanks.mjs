@@ -13,6 +13,8 @@ const API = "https://api.zonelog.net/api/waternet";
 // Zonelog appears to cut off long requests before the newest readings, so ask
 // for a short recent window first and only look further back if it's empty.
 const LOOKBACK_HOURS = [6, 48];
+// A failed fetch only fails the run once a tank's last reading is this old.
+const ALERT_HOURS = 2;
 const CONFIG = new URL("../tanks.json", import.meta.url);
 const OUT = new URL("../tank-data.js", import.meta.url);
 const PREFIX = "window.TANK_DATA = ";
@@ -97,7 +99,8 @@ async function previousReadings() {
 
 const config = JSON.parse(await readFile(CONFIG, "utf8"));
 const previous = await previousReadings();
-const token = await getToken();
+// A failed sign-in is handled per tank below, like any other failed fetch.
+const token = await getToken().catch(err => err);
 let failures = 0;
 
 const tanks = [];
@@ -105,12 +108,19 @@ for (const t of config.tanks) {
   const tank = { ...t };
   if (!t.installing) {
     try {
+      if (token instanceof Error) throw token;
       Object.assign(tank, await latestReading(token, t.serial));
     } catch (err) {
-      failures++;
-      console.error(err.message);
       const old = previous[t.serial];
       if (old?.level_ft != null) Object.assign(tank, { level_ft: old.level_ft, reading_time: old.reading_time });
+      // A one-off Zonelog hiccup isn't worth a failure email; only fail once
+      // the tank has gone without a fresh reading for a while.
+      if (old?.reading_time && Date.now() - new Date(old.reading_time) < ALERT_HOURS * 36e5) {
+        console.warn(`::warning::${err.message} (keeping the reading from ${old.reading_time})`);
+      } else {
+        failures++;
+        console.error(err.message);
+      }
     }
   }
   tanks.push(tank);
