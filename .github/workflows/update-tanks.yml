@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy_retry.outputs.page_url }}
     steps:
       # Start from the newest commit, not the one that triggered the run, so a
       # run that waited behind another one doesn't start out of date.
@@ -63,8 +63,19 @@ jobs:
         with:
           path: _site
 
+      # GitHub sometimes can't find the just-uploaded files for a moment
+      # ("No artifacts named github-pages"), so wait and try once more.
       - uses: actions/deploy-pages@v4
         id: deploy
+        continue-on-error: true
+
+      - name: Wait before retrying publish
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 30
+
+      - uses: actions/deploy-pages@v4
+        id: deploy_retry
+        if: steps.deploy.outcome == 'failure'
 
       - name: Report a failed fetch
         if: steps.fetch.outcome == 'failure'
